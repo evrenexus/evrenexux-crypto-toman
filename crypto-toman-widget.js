@@ -4,45 +4,13 @@
     var box = document.getElementById("EvrenxusCryptoGrid");
     if (!box) return;
 
-    box.innerHTML = `
-        <div class="EvrenxusMarketTitle">بازار ایران</div>
+    box.innerHTML =
+        '<tgju type="market-data" items="398096,398097,535605,398115,398102" columns="dot,diff,low,high,time" token="webservice"></tgju>';
 
-        <tgju
-            type="market-data"
-            items="MARKET_ITEMS"
-            columns="dot,diff,low,high,time"
-            token="webservice">
-        </tgju>
-    `;
-
-    var style = document.createElement("style");
-
-    style.textContent = `
-        #EvrenxusCryptoGrid {
-            width:100%;
-            margin:20px 0;
-            direction:rtl;
-            font-family:Vazir,Tahoma,Arial,sans-serif;
-        }
-
-        .EvrenxusMarketTitle {
-            font-size:18px;
-            font-weight:bold;
-            margin-bottom:12px;
-        }
-
-        #EvrenxusCryptoGrid tgju {
-            display:block;
-            width:100%;
-        }
-    `;
-
-    document.head.appendChild(style);
-
-    var script = document.createElement("script");
-    script.src = "https://api.tgju.org/v1/widget/v2";
-    script.defer = true;
-
-    document.body.appendChild(script);
-
+    if (!document.querySelector('script[src="https://api.tgju.org/v1/widget/v2"]')) {
+        var s = document.createElement("script");
+        s.src = "https://api.tgju.org/v1/widget/v2";
+        s.defer = true;
+        document.body.appendChild(s);
+    }
 })();
