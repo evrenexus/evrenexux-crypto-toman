@@ -1,6 +1,4 @@
 (function () {
-    "use strict";
-
     var box = document.getElementById("EvrenxusNewsFeed") ||
               document.getElementById("EvrenxusCryptoGrid");
 
@@ -8,215 +6,91 @@
 
     var feeds = [
         {
-            name: "دنیای اقتصاد",
-            url: "https://donya-e-eqtesad.com/fa/feeds/?p=all"
-        },
-        {
             name: "عصر ایران",
             url: "https://www.asriran.com/fa/rss/allnews"
         },
         {
+            name: "دنیای اقتصاد",
+            url: "https://donya-e-eqtesad.com/feeds/"
+        },
+        {
             name: "دیجیاتو",
-            url: "https://digiato.com/feed/"
+            url: "https://digiato.com/feed"
         }
     ];
 
-    var news = [];
+    /* تمام لینک‌های خبر از این Viewer عبور می‌کنند */
+    var viewer = "https://evrenexus.github.io/svgevrenexus-viewer/viewer.html?url=";
 
     box.innerHTML =
-        '<div class="EvrenxusNewsLoading">در حال دریافت اخبار...</div>';
+        '<div style="padding:20px;text-align:center">در حال دریافت آخرین اخبار...</div>';
 
-    var style = document.createElement("style");
-
-    style.textContent = `
-        #EvrenxusNewsFeed,
-        #EvrenxusCryptoGrid {
-            direction: rtl;
-            width: 100%;
-            margin: 0;
-            font-family: Vazir, Tahoma, Arial, sans-serif;
-        }
-
-        .EvrenxusNewsList {
-            display: flex;
-            flex-direction: column;
-            width: 100%;
-        }
-
-        .EvrenxusNewsItem {
-            display: flex;
-            gap: 14px;
-            padding: 13px 0;
-            border-bottom: 1px solid #e5e5e5;
-            text-decoration: none !important;
-            color: inherit !important;
-        }
-
-        .EvrenxusNewsImage {
-            width: 125px;
-            height: 82px;
-            min-width: 125px;
-            object-fit: cover;
-            border-radius: 6px;
-            background: #eee;
-        }
-
-        .EvrenxusNewsContent {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .EvrenxusNewsTitle {
-            font-size: 16px;
-            font-weight: bold;
-            line-height: 1.8;
-            margin-bottom: 4px;
-        }
-
-        .EvrenxusNewsDesc {
-            font-size: 13px;
-            line-height: 1.8;
-            color: #666;
-        }
-
-        .EvrenxusNewsMeta {
-            margin-top: 6px;
-            font-size: 11px;
-            color: #999;
-        }
-
-        .EvrenxusNewsSource {
-            font-weight: bold;
-            margin-left: 8px;
-        }
-
-        .EvrenxusNewsLoading {
-            text-align: center;
-            padding: 25px;
-            color: #888;
-        }
-
-        @media (max-width: 600px) {
-            .EvrenxusNewsItem {
-                gap: 10px;
-            }
-
-            .EvrenxusNewsImage {
-                width: 95px;
-                min-width: 95px;
-                height: 68px;
-            }
-
-            .EvrenxusNewsTitle {
-                font-size: 14px;
-            }
-
-            .EvrenxusNewsDesc {
-                font-size: 12px;
-            }
-        }
-    `;
-
-    document.head.appendChild(style);
-
-    function clean(text) {
-        var div = document.createElement("div");
-        div.innerHTML = text || "";
-
-        return (div.textContent || div.innerText || "")
-            .replace(/\s+/g, " ")
-            .trim();
-    }
-
-    function getDate(item) {
-        var value =
-            item.pubDate ||
-            item.published ||
-            item.pubdate ||
-            item.date;
-
-        var d = value ? new Date(value) : new Date(0);
-
-        return isNaN(d.getTime()) ? new Date(0) : d;
-    }
-
-    function shortText(text) {
-        text = clean(text);
-
-        return text.length > 150
-            ? text.substring(0, 150).trim() + "…"
-            : text;
-    }
-
-    function getImage(item) {
-        if (item.thumbnail) return item.thumbnail;
-
-        if (item.enclosure && item.enclosure.link) {
-            return item.enclosure.link;
-        }
-
-        var html =
-            item.description ||
-            item.content ||
-            "";
-
-        var match = html.match(
-            /<img[^>]+src=["']([^"']+)["']/i
-        );
-
-        return match ? match[1] : "";
-    }
-
-    function getFeed(feed) {
-
+    function getRSS(feed) {
         var api =
             "https://api.rss2json.com/v1/api.json?rss_url=" +
             encodeURIComponent(feed.url);
 
         return fetch(api)
-            .then(function (response) {
-                if (!response.ok) {
-                    throw new Error("Feed error");
-                }
-
-                return response.json();
-            })
+            .then(function (r) { return r.json(); })
             .then(function (data) {
+                if (!data.items) return [];
 
-                if (!data.items) return;
+                return data.items.map(function (item) {
+                    var image = item.thumbnail || "";
 
-                data.items.slice(0, 10).forEach(function (item) {
+                    if (!image && item.enclosure && item.enclosure.link) {
+                        image = item.enclosure.link;
+                    }
 
-                    if (!item.link) return;
+                    if (!image) {
+                        var html = item.description || item.content || "";
+                        var m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+                        if (m) image = m[1];
+                    }
 
-                    news.push({
-                        title: clean(item.title),
-                        description: shortText(
-                            item.description ||
-                            item.content ||
-                            ""
-                        ),
-                        image: getImage(item),
-                        link: item.link,
+                    var description =
+                        (item.description || item.content || "")
+                        .replace(/<[^>]*>/g, "")
+                        .replace(/&nbsp;/g, " ")
+                        .replace(/&amp;/g, "&")
+                        .trim();
+
+                    if (description.length > 150) {
+                        description = description.substring(0, 150) + "…";
+                    }
+
+                    return {
+                        title: item.title || "",
+                        description: description,
+                        link: item.link || "",
+                        image: image,
                         source: feed.name,
-                        date: getDate(item)
-                    });
+                        date: new Date(item.pubDate || item.published || 0)
+                    };
                 });
             })
-            .catch(function () {});
+            .catch(function () {
+                return [];
+            });
     }
 
-    function render() {
+    Promise.all(feeds.map(getRSS)).then(function (results) {
+
+        var news = [];
+
+        results.forEach(function (items) {
+            news = news.concat(items);
+        });
 
         news.sort(function (a, b) {
-            return b.date.getTime() - a.date.getTime();
+            return b.date - a.date;
         });
 
         news = news.slice(0, 15);
 
         if (!news.length) {
             box.innerHTML =
-                '<div class="EvrenxusNewsLoading">خبری دریافت نشد.</div>';
+                '<div style="padding:20px;text-align:center">خبری دریافت نشد.</div>';
             return;
         }
 
@@ -224,66 +98,154 @@
 
         news.forEach(function (item) {
 
-            var dateText = item.date.getTime()
-                ? item.date.toLocaleString("fa-IR", {
+            var dateText = "";
+
+            if (!isNaN(item.date.getTime())) {
+                dateText = item.date.toLocaleString("fa-IR", {
+                    year: "numeric",
                     month: "2-digit",
                     day: "2-digit",
                     hour: "2-digit",
                     minute: "2-digit"
-                })
-                : "";
+                });
+            }
 
-            html += `
-                <a
-                    class="EvrenxusNewsItem"
-                    href="${item.link}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >
+            /*
+             * مهم:
+             * لینک مستقیم منبع هرگز باز نمی‌شود.
+             * لینک همیشه به Viewer اختصاصی Evrenxus می‌رود.
+             */
+            var target =
+                viewer + encodeURIComponent(item.link);
 
-                    ${
-                        item.image
-                        ? `<img
-                            class="EvrenxusNewsImage"
-                            src="${item.image}"
-                            loading="lazy"
-                            onerror="this.style.display='none'"
-                           >`
-                        : `<div class="EvrenxusNewsImage"></div>`
-                    }
+            html +=
+                '<a href="' + target + '" target="_blank" class="EvrenxusNewsItem">' +
 
-                    <div class="EvrenxusNewsContent">
+                    '<div class="EvrenxusNewsImage">' +
+                        (item.image
+                            ? '<img src="' + item.image + '" loading="lazy">'
+                            : '') +
+                    '</div>' +
 
-                        <div class="EvrenxusNewsTitle">
-                            ${item.title}
-                        </div>
+                    '<div class="EvrenxusNewsContent">' +
 
-                        <div class="EvrenxusNewsDesc">
-                            ${item.description}
-                        </div>
+                        '<div class="EvrenxusNewsTitle">' +
+                            item.title +
+                        '</div>' +
 
-                        <div class="EvrenxusNewsMeta">
-                            <span class="EvrenxusNewsSource">
-                                ${item.source}
-                            </span>
-                            ${dateText}
-                        </div>
+                        '<div class="EvrenxusNewsDesc">' +
+                            item.description +
+                        '</div>' +
 
-                    </div>
+                        '<div class="EvrenxusNewsMeta">' +
+                            '<span class="EvrenxusNewsSource">' +
+                                item.source +
+                            '</span>' +
+                            '<span>' +
+                                dateText +
+                            '</span>' +
+                        '</div>' +
 
-                </a>
-            `;
+                    '</div>' +
+
+                '</a>';
         });
 
-        html += "</div>";
+        html += '</div>';
 
         box.innerHTML = html;
-    }
+    });
 
-    Promise.all(
-        feeds.map(function (feed) {
-            return getFeed(feed);
-        })
-    ).then(render);
+    var style = document.createElement("style");
+
+    style.textContent = `
+        .EvrenxusNewsList {
+            width:100%;
+            display:flex;
+            flex-direction:column;
+            gap:10px;
+        }
+
+        .EvrenxusNewsItem {
+            display:flex;
+            direction:rtl;
+            width:100%;
+            box-sizing:border-box;
+            padding:10px;
+            text-decoration:none !important;
+            color:inherit !important;
+            border-bottom:1px solid rgba(128,128,128,.18);
+            transition:.2s;
+        }
+
+        .EvrenxusNewsItem:hover {
+            background:rgba(128,128,128,.07);
+        }
+
+        .EvrenxusNewsImage {
+            width:120px;
+            min-width:120px;
+            height:78px;
+            overflow:hidden;
+            border-radius:6px;
+            margin-left:12px;
+            background:#eee;
+        }
+
+        .EvrenxusNewsImage img {
+            width:100%;
+            height:100%;
+            object-fit:cover;
+            display:block;
+        }
+
+        .EvrenxusNewsContent {
+            flex:1;
+            min-width:0;
+        }
+
+        .EvrenxusNewsTitle {
+            font-size:16px;
+            font-weight:700;
+            line-height:1.7;
+            margin-bottom:4px;
+        }
+
+        .EvrenxusNewsDesc {
+            font-size:13px;
+            line-height:1.7;
+            opacity:.78;
+        }
+
+        .EvrenxusNewsMeta {
+            display:flex;
+            gap:12px;
+            font-size:11px;
+            opacity:.65;
+            margin-top:5px;
+        }
+
+        .EvrenxusNewsSource {
+            font-weight:700;
+        }
+
+        @media(max-width:600px) {
+            .EvrenxusNewsImage {
+                width:90px;
+                min-width:90px;
+                height:65px;
+            }
+
+            .EvrenxusNewsTitle {
+                font-size:14px;
+            }
+
+            .EvrenxusNewsDesc {
+                font-size:12px;
+            }
+        }
+    `;
+
+    document.head.appendChild(style);
 
 })();
