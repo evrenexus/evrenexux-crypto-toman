@@ -1,13 +1,15 @@
 (function () {
     "use strict";
 
-    var box = document.getElementById("EvrenxusCryptoGrid");
+    var box = document.getElementById("EvrenxusNewsFeed") ||
+              document.getElementById("EvrenxusCryptoGrid");
+
     if (!box) return;
 
     var feeds = [
         {
             name: "دنیای اقتصاد",
-            url: "https://donya-e-eqtesad.com/rss"
+            url: "https://donya-e-eqtesad.com/fa/feeds/?p=all"
         },
         {
             name: "عصر ایران",
@@ -15,43 +17,45 @@
         },
         {
             name: "دیجیاتو",
-            url: "https://digiato.com/feed"
+            url: "https://digiato.com/feed/"
         }
     ];
 
-    var allNews = [];
+    var news = [];
 
     box.innerHTML =
-        '<div class="EvrenxusNewsLoading">در حال دریافت آخرین اخبار...</div>';
+        '<div class="EvrenxusNewsLoading">در حال دریافت اخبار...</div>';
 
     var style = document.createElement("style");
+
     style.textContent = `
+        #EvrenxusNewsFeed,
         #EvrenxusCryptoGrid {
             direction: rtl;
             width: 100%;
-            margin: 20px 0;
+            margin: 0;
             font-family: Vazir, Tahoma, Arial, sans-serif;
         }
 
         .EvrenxusNewsList {
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            width: 100%;
         }
 
         .EvrenxusNewsItem {
             display: flex;
             gap: 14px;
-            padding: 12px 0;
+            padding: 13px 0;
             border-bottom: 1px solid #e5e5e5;
-            text-decoration: none;
-            color: inherit;
+            text-decoration: none !important;
+            color: inherit !important;
         }
 
         .EvrenxusNewsImage {
             width: 125px;
             height: 82px;
-            flex: 0 0 125px;
+            min-width: 125px;
             object-fit: cover;
             border-radius: 6px;
             background: #eee;
@@ -66,7 +70,7 @@
             font-size: 16px;
             font-weight: bold;
             line-height: 1.8;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
         }
 
         .EvrenxusNewsDesc {
@@ -86,11 +90,21 @@
             margin-left: 8px;
         }
 
+        .EvrenxusNewsLoading {
+            text-align: center;
+            padding: 25px;
+            color: #888;
+        }
+
         @media (max-width: 600px) {
+            .EvrenxusNewsItem {
+                gap: 10px;
+            }
+
             .EvrenxusNewsImage {
                 width: 95px;
+                min-width: 95px;
                 height: 68px;
-                flex-basis: 95px;
             }
 
             .EvrenxusNewsTitle {
@@ -102,164 +116,174 @@
             }
         }
     `;
+
     document.head.appendChild(style);
 
-    function cleanText(text) {
+    function clean(text) {
         var div = document.createElement("div");
         div.innerHTML = text || "";
+
         return (div.textContent || div.innerText || "")
             .replace(/\s+/g, " ")
             .trim();
     }
 
-    function getImage(item) {
-        var media =
-            item.querySelector("media\\:content, content") ||
-            item.querySelector("enclosure");
+    function getDate(item) {
+        var value =
+            item.pubDate ||
+            item.published ||
+            item.pubdate ||
+            item.date;
 
-        if (media && media.getAttribute("url")) {
-            return media.getAttribute("url");
+        var d = value ? new Date(value) : new Date(0);
+
+        return isNaN(d.getTime()) ? new Date(0) : d;
+    }
+
+    function shortText(text) {
+        text = clean(text);
+
+        return text.length > 150
+            ? text.substring(0, 150).trim() + "…"
+            : text;
+    }
+
+    function getImage(item) {
+        if (item.thumbnail) return item.thumbnail;
+
+        if (item.enclosure && item.enclosure.link) {
+            return item.enclosure.link;
         }
 
         var html =
-            item.querySelector("description")?.textContent ||
-            item.querySelector("content\\:encoded")?.textContent ||
+            item.description ||
+            item.content ||
             "";
 
-        var match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+        var match = html.match(
+            /<img[^>]+src=["']([^"']+)["']/i
+        );
 
         return match ? match[1] : "";
     }
 
-    function getDate(item) {
-        var d =
-            item.querySelector("pubDate") ||
-            item.querySelector("published") ||
-            item.querySelector("updated");
+    function getFeed(feed) {
 
-        return d ? new Date(d.textContent.trim()) : new Date(0);
-    }
+        var api =
+            "https://api.rss2json.com/v1/api.json?rss_url=" +
+            encodeURIComponent(feed.url);
 
-    function parseFeed(xml, source) {
-        var parser = new DOMParser();
-        var doc = parser.parseFromString(xml, "text/xml");
+        return fetch(api)
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error("Feed error");
+                }
 
-        var items = Array.from(doc.querySelectorAll("item, entry"));
+                return response.json();
+            })
+            .then(function (data) {
 
-        items.slice(0, 10).forEach(function (item) {
-            var titleNode = item.querySelector("title");
-            var linkNode = item.querySelector("link");
+                if (!data.items) return;
 
-            var title = titleNode ? cleanText(titleNode.textContent) : "";
+                data.items.slice(0, 10).forEach(function (item) {
 
-            var link = "";
+                    if (!item.link) return;
 
-            if (linkNode) {
-                link =
-                    linkNode.getAttribute("href") ||
-                    linkNode.textContent.trim();
-            }
-
-            var descNode =
-                item.querySelector("description") ||
-                item.querySelector("summary") ||
-                item.querySelector("content\\:encoded");
-
-            var description = descNode
-                ? cleanText(descNode.textContent)
-                : "";
-
-            if (description.length > 150) {
-                description = description.substring(0, 150).trim() + "…";
-            }
-
-            allNews.push({
-                title: title,
-                link: link,
-                description: description,
-                image: getImage(item),
-                date: getDate(item),
-                source: source
-            });
-        });
+                    news.push({
+                        title: clean(item.title),
+                        description: shortText(
+                            item.description ||
+                            item.content ||
+                            ""
+                        ),
+                        image: getImage(item),
+                        link: item.link,
+                        source: feed.name,
+                        date: getDate(item)
+                    });
+                });
+            })
+            .catch(function () {});
     }
 
     function render() {
-        allNews.sort(function (a, b) {
-            return b.date - a.date;
+
+        news.sort(function (a, b) {
+            return b.date.getTime() - a.date.getTime();
         });
 
-        allNews = allNews.slice(0, 15);
+        news = news.slice(0, 15);
+
+        if (!news.length) {
+            box.innerHTML =
+                '<div class="EvrenxusNewsLoading">خبری دریافت نشد.</div>';
+            return;
+        }
 
         var html = '<div class="EvrenxusNewsList">';
 
-        allNews.forEach(function (news) {
-            var dateText = news.date.getTime()
-                ? news.date.toLocaleString("fa-IR", {
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit"
-                  })
+        news.forEach(function (item) {
+
+            var dateText = item.date.getTime()
+                ? item.date.toLocaleString("fa-IR", {
+                    month: "2-digit",
+                    day: "2-digit",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                })
                 : "";
 
             html += `
-                <a class="EvrenxusNewsItem"
-                   href="${news.link}"
-                   target="_blank"
-                   rel="noopener noreferrer">
+                <a
+                    class="EvrenxusNewsItem"
+                    href="${item.link}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
 
                     ${
-                        news.image
-                            ? `<img class="EvrenxusNewsImage"
-                                    src="${news.image}"
-                                    loading="lazy"
-                                    onerror="this.style.display='none'">`
-                            : `<div class="EvrenxusNewsImage"></div>`
+                        item.image
+                        ? `<img
+                            class="EvrenxusNewsImage"
+                            src="${item.image}"
+                            loading="lazy"
+                            onerror="this.style.display='none'"
+                           >`
+                        : `<div class="EvrenxusNewsImage"></div>`
                     }
 
                     <div class="EvrenxusNewsContent">
+
                         <div class="EvrenxusNewsTitle">
-                            ${news.title}
+                            ${item.title}
                         </div>
 
                         <div class="EvrenxusNewsDesc">
-                            ${news.description}
+                            ${item.description}
                         </div>
 
                         <div class="EvrenxusNewsMeta">
                             <span class="EvrenxusNewsSource">
-                                ${news.source}
+                                ${item.source}
                             </span>
                             ${dateText}
                         </div>
+
                     </div>
+
                 </a>
             `;
         });
 
         html += "</div>";
 
-        box.innerHTML = allNews.length
-            ? html
-            : '<div>خبری دریافت نشد.</div>';
+        box.innerHTML = html;
     }
 
-    var requests = feeds.map(function (feed) {
-        return fetch(
-            "https://api.allorigins.win/raw?url=" +
-                encodeURIComponent(feed.url)
-        )
-            .then(function (response) {
-                if (!response.ok) throw new Error("RSS error");
-                return response.text();
-            })
-            .then(function (xml) {
-                parseFeed(xml, feed.name);
-            })
-            .catch(function () {});
-    });
+    Promise.all(
+        feeds.map(function (feed) {
+            return getFeed(feed);
+        })
+    ).then(render);
 
-    Promise.all(requests).then(render);
 })();
