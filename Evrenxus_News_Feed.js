@@ -1,251 +1,305 @@
-(function () {
-    var box = document.getElementById("EvrenxusNewsFeed") ||
-              document.getElementById("EvrenxusCryptoGrid");
+(function() {
+    'use strict';
 
-    if (!box) return;
-
-    var feeds = [
-        {
-            name: "عصر ایران",
-            url: "https://www.asriran.com/fa/rss/allnews"
-        },
-        {
-            name: "دنیای اقتصاد",
-            url: "https://donya-e-eqtesad.com/feeds/"
-        },
-        {
-            name: "دیجیاتو",
-            url: "https://digiato.com/feed"
-        }
+    const RSS_FEEDS = [
+        { url: 'https://www.asriran.com/fa/rss/allnews', source: 'عصر ایران' },
+        { url: 'https://donya-e-eqtesad.com/feeds/', source: 'دنیای اقتصاد' },
+        { url: 'https://digiato.com/feed', source: 'دیجیاتو' }
     ];
 
-    /* تمام لینک‌های خبر از این Viewer عبور می‌کنند */
-    var viewer = "https://evrenexus.github.io/svgevrenexus-viewer/viewer.html?url=";
+    const VIEWER_BASE = 'https://evrenexus.github.io/svgevrenexus-viewer/viewer.html?url=';
+    const PROXY = 'https://api.allorigins.win/get?url=';
 
-    box.innerHTML =
-        '<div style="padding:20px;text-align:center">در حال دریافت آخرین اخبار...</div>';
-
-    function getRSS(feed) {
-        var api =
-            "https://api.rss2json.com/v1/api.json?rss_url=" +
-            encodeURIComponent(feed.url);
-
-        return fetch(api)
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data.items) return [];
-
-                return data.items.map(function (item) {
-                    var image = item.thumbnail || "";
-
-                    if (!image && item.enclosure && item.enclosure.link) {
-                        image = item.enclosure.link;
-                    }
-
-                    if (!image) {
-                        var html = item.description || item.content || "";
-                        var m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
-                        if (m) image = m[1];
-                    }
-
-                    var description =
-                        (item.description || item.content || "")
-                        .replace(/<[^>]*>/g, "")
-                        .replace(/&nbsp;/g, " ")
-                        .replace(/&amp;/g, "&")
-                        .trim();
-
-                    if (description.length > 150) {
-                        description = description.substring(0, 150) + "…";
-                    }
-
-                    return {
-                        title: item.title || "",
-                        description: description,
-                        link: item.link || "",
-                        image: image,
-                        source: feed.name,
-                        date: new Date(item.pubDate || item.published || 0)
-                    };
-                });
-            })
-            .catch(function () {
-                return [];
-            });
+    async function fetchRSS(feedUrl) {
+        try {
+            const proxyUrl = PROXY + encodeURIComponent(feedUrl);
+            const response = await fetch(proxyUrl);
+            const data = await response.json();
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(data.contents, 'text/xml');
+            
+            if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+                throw new Error('XML Parse Error');
+            }
+            
+            return xmlDoc;
+        } catch (error) {
+            console.error('Error fetching RSS:', feedUrl, error);
+            return null;
+        }
     }
 
-    Promise.all(feeds.map(getRSS)).then(function (results) {
-
-        var news = [];
-
-        results.forEach(function (items) {
-            news = news.concat(items);
+    function parseItems(xmlDoc, source) {
+        const items = [];
+        const entries = xmlDoc.querySelectorAll('item');
+        
+        entries.forEach(entry => {
+            const title = entry.querySelector('title')?.textContent || 'بدون عنوان';
+            const link = entry.querySelector('link')?.textContent || '#';
+            const description = entry.querySelector('description')?.textContent || '';
+            const pubDate = entry.querySelector('pubDate')?.textContent || new Date().toISOString();
+            
+            // استخراج تصویر
+            let image = '';
+            const imageTag = entry.querySelector('image') || entry.querySelector('media\\:content') || entry.querySelector('[url]');
+            if (imageTag) {
+                image = imageTag.getAttribute('url') || imageTag.textContent;
+            }
+            
+            items.push({
+                title: cleanText(title),
+                link: link.trim(),
+                description: truncateText(stripHtml(description), 150),
+                image: image,
+                source: source,
+                pubDate: new Date(pubDate),
+                timestamp: new Date(pubDate).getTime()
+            });
         });
+        
+        return items;
+    }
 
-        news.sort(function (a, b) {
-            return b.date - a.date;
-        });
+    function cleanText(text) {
+        return text.trim().replace(/<[^>]*>/g, '');
+    }
 
-        news = news.slice(0, 15);
+    function stripHtml(html) {
+        const tmp = document.createElement('DIV');
+        tmp.innerHTML = html;
+        return tmp.textContent || tmp.innerText || '';
+    }
 
-        if (!news.length) {
-            box.innerHTML =
-                '<div style="padding:20px;text-align:center">خبری دریافت نشد.</div>';
-            return;
-        }
+    function truncateText(text, length) {
+        return text.length > length ? text.substring(0, length) + '...' : text;
+    }
 
-        var html = '<div class="EvrenxusNewsList">';
+    function formatDate(date) {
+        const now = new Date();
+        const diff = now - date;
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
 
-        news.forEach(function (item) {
+        if (minutes < 1) return 'الآن';
+        if (minutes < 60) return `${minutes} دقیقه پیش`;
+        if (hours < 24) return `${hours} ساعت پیش`;
+        if (days < 7) return `${days} روز پیش`;
+        
+        return date.toLocaleDateString('fa-IR');
+    }
 
-            var dateText = "";
+    function createNewsHTML(items) {
+        return items.map(item => `
+            <div class="news-item">
+                ${item.image ? `<img src="${item.image}" alt="${item.title}" class="news-image" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%2280%22%3E%3Crect fill=%22%23ddd%22 width=%22120%22 height=%2280%22/%3E%3C/svg%3E'">` : `<div class="news-image-placeholder">📰</div>`}
+                <div class="news-content">
+                    <a href="${VIEWER_BASE}${encodeURIComponent(item.link)}" target="_blank" class="news-title">
+                        ${item.title}
+                    </a>
+                    <p class="news-description">${item.description}</p>
+                    <div class="news-meta">
+                        <span class="news-source">${item.source}</span>
+                        <span class="news-time">${formatDate(item.pubDate)}</span>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
 
-            if (!isNaN(item.date.getTime())) {
-                dateText = item.date.toLocaleString("fa-IR", {
-                    year: "numeric",
-                    month: "2-digit",
-                    day: "2-digit",
-                    hour: "2-digit",
-                    minute: "2-digit"
-                });
+    function createCSS() {
+        return `
+            <style>
+                #EvrenxusNewsFeed {
+                    direction: rtl;
+                    font-family: Tahoma, Arial, sans-serif;
+                }
+
+                .news-container {
+                    max-width: 100%;
+                    margin: 0;
+                    padding: 0;
+                }
+
+                .news-item {
+                    display: flex;
+                    gap: 15px;
+                    padding: 15px;
+                    border-bottom: 1px solid #eee;
+                    background: white;
+                    transition: background 0.3s ease;
+                    align-items: flex-start;
+                }
+
+                .news-item:hover {
+                    background: #f9f9f9;
+                }
+
+                .news-image {
+                    width: 120px;
+                    height: 80px;
+                    object-fit: cover;
+                    border-radius: 4px;
+                    flex-shrink: 0;
+                }
+
+                .news-image-placeholder {
+                    width: 120px;
+                    height: 80px;
+                    background: #f0f0f0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 32px;
+                    border-radius: 4px;
+                    flex-shrink: 0;
+                }
+
+                .news-content {
+                    flex: 1;
+                    min-width: 0;
+                }
+
+                .news-title {
+                    display: block;
+                    font-size: 15px;
+                    font-weight: bold;
+                    color: #1a73e8;
+                    text-decoration: none;
+                    line-height: 1.4;
+                    margin-bottom: 8px;
+                    word-wrap: break-word;
+                }
+
+                .news-title:hover {
+                    text-decoration: underline;
+                    color: #0d47a1;
+                }
+
+                .news-description {
+                    font-size: 13px;
+                    color: #555;
+                    line-height: 1.5;
+                    margin: 0 0 8px 0;
+                    word-wrap: break-word;
+                }
+
+                .news-meta {
+                    display: flex;
+                    gap: 15px;
+                    font-size: 12px;
+                    color: #999;
+                }
+
+                .news-source {
+                    background: #f0f0f0;
+                    padding: 2px 8px;
+                    border-radius: 3px;
+                    font-weight: bold;
+                    color: #666;
+                }
+
+                .news-time {
+                    color: #999;
+                }
+
+                .news-loading {
+                    text-align: center;
+                    padding: 30px;
+                    color: #666;
+                }
+
+                .news-error {
+                    background: #fee;
+                    color: #c33;
+                    padding: 15px;
+                    border-right: 4px solid #c33;
+                    margin: 10px;
+                    border-radius: 4px;
+                }
+
+                @media (max-width: 600px) {
+                    .news-item {
+                        gap: 10px;
+                        padding: 10px;
+                    }
+
+                    .news-image,
+                    .news-image-placeholder {
+                        width: 80px;
+                        height: 60px;
+                    }
+
+                    .news-title {
+                        font-size: 14px;
+                    }
+
+                    .news-description {
+                        font-size: 12px;
+                    }
+
+                    .news-meta {
+                        gap: 10px;
+                        font-size: 11px;
+                    }
+                }
+            </style>
+        `;
+    }
+
+    async function loadNewsFeed() {
+        const container = document.getElementById('EvrenxusNewsFeed');
+        if (!container) return;
+
+        // افزودن CSS
+        document.head.insertAdjacentHTML('beforeend', createCSS());
+
+        // نمایش Loading
+        container.innerHTML = '<div class="news-loading">⏳ در حال بارگذاری اخبار...</div>';
+
+        try {
+            const allItems = [];
+
+            // دریافت و parse تمام RSS Feeds
+            for (const feed of RSS_FEEDS) {
+                const xmlDoc = await fetchRSS(feed.url);
+                if (xmlDoc) {
+                    const items = parseItems(xmlDoc, feed.source);
+                    allItems.push(...items);
+                }
             }
 
-            /*
-             * مهم:
-             * لینک مستقیم منبع هرگز باز نمی‌شود.
-             * لینک همیشه به Viewer اختصاصی Evrenxus می‌رود.
-             */
-            var target =
-                viewer + encodeURIComponent(item.link);
-
-            html +=
-                '<a href="' + target + '" target="_blank" class="EvrenxusNewsItem">' +
-
-                    '<div class="EvrenxusNewsImage">' +
-                        (item.image
-                            ? '<img src="' + item.image + '" loading="lazy">'
-                            : '') +
-                    '</div>' +
-
-                    '<div class="EvrenxusNewsContent">' +
-
-                        '<div class="EvrenxusNewsTitle">' +
-                            item.title +
-                        '</div>' +
-
-                        '<div class="EvrenxusNewsDesc">' +
-                            item.description +
-                        '</div>' +
-
-                        '<div class="EvrenxusNewsMeta">' +
-                            '<span class="EvrenxusNewsSource">' +
-                                item.source +
-                            '</span>' +
-                            '<span>' +
-                                dateText +
-                            '</span>' +
-                        '</div>' +
-
-                    '</div>' +
-
-                '</a>';
-        });
-
-        html += '</div>';
-
-        box.innerHTML = html;
-    });
-
-    var style = document.createElement("style");
-
-    style.textContent = `
-        .EvrenxusNewsList {
-            width:100%;
-            display:flex;
-            flex-direction:column;
-            gap:10px;
-        }
-
-        .EvrenxusNewsItem {
-            display:flex;
-            direction:rtl;
-            width:100%;
-            box-sizing:border-box;
-            padding:10px;
-            text-decoration:none !important;
-            color:inherit !important;
-            border-bottom:1px solid rgba(128,128,128,.18);
-            transition:.2s;
-        }
-
-        .EvrenxusNewsItem:hover {
-            background:rgba(128,128,128,.07);
-        }
-
-        .EvrenxusNewsImage {
-            width:120px;
-            min-width:120px;
-            height:78px;
-            overflow:hidden;
-            border-radius:6px;
-            margin-left:12px;
-            background:#eee;
-        }
-
-        .EvrenxusNewsImage img {
-            width:100%;
-            height:100%;
-            object-fit:cover;
-            display:block;
-        }
-
-        .EvrenxusNewsContent {
-            flex:1;
-            min-width:0;
-        }
-
-        .EvrenxusNewsTitle {
-            font-size:16px;
-            font-weight:700;
-            line-height:1.7;
-            margin-bottom:4px;
-        }
-
-        .EvrenxusNewsDesc {
-            font-size:13px;
-            line-height:1.7;
-            opacity:.78;
-        }
-
-        .EvrenxusNewsMeta {
-            display:flex;
-            gap:12px;
-            font-size:11px;
-            opacity:.65;
-            margin-top:5px;
-        }
-
-        .EvrenxusNewsSource {
-            font-weight:700;
-        }
-
-        @media(max-width:600px) {
-            .EvrenxusNewsImage {
-                width:90px;
-                min-width:90px;
-                height:65px;
+            if (allItems.length === 0) {
+                container.innerHTML = '<div class="news-error">⚠️ هیچ خبری یافت نشد</div>';
+                return;
             }
 
-            .EvrenxusNewsTitle {
-                font-size:14px;
-            }
+            // مرتب‌سازی بر اساس تاریخ (جدید‌ترین اول)
+            allItems.sort((a, b) => b.timestamp - a.timestamp);
 
-            .EvrenxusNewsDesc {
-                font-size:12px;
-            }
+            // نمایش 15 خبر اول
+            const latestNews = allItems.slice(0, 15);
+
+            // ایجاد و نمایش HTML
+            const newsHTML = `
+                <div class="news-container">
+                    ${createNewsHTML(latestNews)}
+                </div>
+            `;
+
+            container.innerHTML = newsHTML;
+
+        } catch (error) {
+            console.error('Fatal error:', error);
+            container.innerHTML = '<div class="news-error">❌ خطا در بارگذاری اخبار</div>';
         }
-    `;
+    }
 
-    document.head.appendChild(style);
+    // بارگذاری وقتی DOM آماده باشد
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', loadNewsFeed);
+    } else {
+        loadNewsFeed();
+    }
 
 })();
